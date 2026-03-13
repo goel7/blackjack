@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blackjack Table</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="settings-wrap">
+      <button class="settings-btn" id="settingsBtn" aria-expanded="false">
+        ⚙ Settings
+      </button>
+      <div class="settings-menu" id="settingsMenu" hidden>
+        <label class="settings-toggle" for="assistedToggle">
+          <span>Assisted gameplay</span>
+          <span class="toggle-control">
+            <input type="checkbox" id="assistedToggle" />
+            <span class="toggle-switch" aria-hidden="true"></span>
+          </span>
+        </label>
+        <label class="settings-field" for="autoBetInput">
+          <span>Place automatic bet</span>
+          <input
+            type="number"
+            id="autoBetInput"
+            min="0"
+            step="1"
+            value="0"
+            class="settings-number"
+          />
+        </label>
+        <label class="settings-field" for="blackjackPayoutSelect">
+          <span>Blackjack payout</span>
+          <select id="blackjackPayoutSelect" class="settings-number">
+            <option value="1:1">1:1</option>
+            <option value="5:4" selected>5:4</option>
+            <option value="3:2">3:2</option>
+          </select>
+        </label>
+        <label class="settings-field" for="dealerRuleSelect">
+          <span>Dealer rule</span>
+          <select id="dealerRuleSelect" class="settings-number">
+            <option value="H17" selected>H17 (hit soft 17)</option>
+            <option value="S17">S17 (stand on all 17)</option>
+          </select>
+        </label>
+        <label class="settings-toggle" for="hotkeysToggle">
+          <span>Hotkeys</span>
+          <span class="toggle-control">
+            <input type="checkbox" id="hotkeysToggle" />
+            <span class="toggle-switch" aria-hidden="true"></span>
+          </span>
+        </label>
+        <button class="settings-action" id="openKeybindsBtn">Keybinds</button>
+        <button class="settings-action" id="simulateRunsBtn">
+          Simulate runs
+        </button>
+        <button class="settings-action" id="openBankrollBtn">
+          Update bankroll
+        </button>
+      </div>
+    </div>
+
+    <h1>♠ Blackjack ♥</h1>
+    <p class="subtitle">A Gentleman's Game</p>
+
+    <div class="balances">
+      <div class="balance-card">
+        <div class="balance-label">Player Balance</div>
+        <div class="balance-amount" id="playerBal">$500</div>
+        <div class="balance-change" id="playerChg">&nbsp;</div>
+      </div>
+      <div class="balance-card current">
+        <div class="balance-label">Current Bet</div>
+        <div class="balance-amount current-bet" id="betDisplay">$0</div>
+        <div class="balance-change" id="betChg">&nbsp;</div>
+      </div>
+      <div class="balance-card">
+        <div class="balance-label">Dealer Bank</div>
+        <div class="balance-amount" id="dealerBal">$500</div>
+        <div class="balance-change" id="dealerChg">&nbsp;</div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="bankrollModal" aria-hidden="true">
+      <section
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bankrollTitle"
+      >
+        <div class="bankroll-title" id="bankrollTitle">
+          Set Starting Bankrolls
+        </div>
+        <div class="bankroll-grid">
+          <div class="setup-field">
+            <label for="playerBankrollInput">Player bankroll</label>
+            <input id="playerBankrollInput" type="number" min="1" value="500" />
+          </div>
+          <div class="setup-field">
+            <label for="dealerBankrollInput">Dealer bankroll</label>
+            <input id="dealerBankrollInput" type="number" min="1" value="500" />
+          </div>
+        </div>
+        <p class="bankroll-help">
+          Chips scale from player bankroll with rounded values.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="closeBankrollBtn">Cancel</button>
+          <button class="btn-apply" id="applyBankrollBtn">
+            Update Bankrolls
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="simulationModal" aria-hidden="true">
+      <section
+        class="modal-card modal-card-sim"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="simulationTitle"
+      >
+        <div class="bankroll-title" id="simulationTitle">Simulation Lab</div>
+        <div class="simulation-grid">
+          <div class="setup-field">
+            <label for="simulateRunCountInput">Hands to simulate</label>
+            <input
+              id="simulateRunCountInput"
+              type="number"
+              min="1"
+              max="10000000"
+              step="1"
+              value="100"
+            />
+          </div>
+          <div class="setup-field">
+            <label for="simulateBaseBetInput">Base bet per round</label>
+            <input
+              id="simulateBaseBetInput"
+              type="number"
+              min="1"
+              step="1"
+              value="10"
+            />
+          </div>
+          <div class="setup-field">
+            <label for="simulatePlayerBankrollInput"
+              >Starting player bankroll</label
+            >
+            <input
+              id="simulatePlayerBankrollInput"
+              type="number"
+              min="1"
+              step="1"
+              value="500"
+            />
+          </div>
+          <div class="setup-field">
+            <label for="simulateDealerBankrollInput"
+              >Starting dealer bankroll</label
+            >
+            <input
+              id="simulateDealerBankrollInput"
+              type="number"
+              min="1"
+              step="1"
+              value="500"
+            />
+          </div>
+        </div>
+        <div
+          class="simulation-results"
+          id="simulationResults"
+          aria-live="polite"
+        >
+          <div class="simulation-placeholder">
+            Choose the run count and bankrolls, then run the simulation to see
+            the summary here.
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="closeSimulationBtn">Close</button>
+          <button class="btn-apply" id="startSimulationBtn">
+            Run Simulation
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="simulationWarningModal" aria-hidden="true">
+      <section
+        class="modal-card modal-card-warning"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="simulationWarningTitle"
+      >
+        <div class="warning-badge">⚠ Large Simulation</div>
+        <div class="bankroll-title" id="simulationWarningTitle">
+          This run may take a while
+        </div>
+        <p class="warning-copy" id="simulationWarningText">
+          You are about to run a very large simulation.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="cancelSimulationWarningBtn">
+            Cancel
+          </button>
+          <button class="btn-apply" id="confirmSimulationWarningBtn">
+            Continue
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="keybindsModal" aria-hidden="true">
+      <section
+        class="modal-card modal-card-keybinds"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="keybindsTitle"
+      >
+        <div class="bankroll-title" id="keybindsTitle">Hotkey Bindings</div>
+        <div class="keybind-grid">
+          <label class="keybind-row" for="keybindDealInput">
+            <span>Deal</span>
+            <input
+              id="keybindDealInput"
+              class="keybind-input"
+              type="text"
+              maxlength="1"
+              autocomplete="off"
+            />
+          </label>
+          <label class="keybind-row" for="keybindHitInput">
+            <span>Hit</span>
+            <input
+              id="keybindHitInput"
+              class="keybind-input"
+              type="text"
+              maxlength="1"
+              autocomplete="off"
+            />
+          </label>
+          <label class="keybind-row" for="keybindStandInput">
+            <span>Stand</span>
+            <input
+              id="keybindStandInput"
+              class="keybind-input"
+              type="text"
+              maxlength="1"
+              autocomplete="off"
+            />
+          </label>
+          <label class="keybind-row" for="keybindDoubleInput">
+            <span>Double</span>
+            <input
+              id="keybindDoubleInput"
+              class="keybind-input"
+              type="text"
+              maxlength="1"
+              autocomplete="off"
+            />
+          </label>
+          <label class="keybind-row" for="keybindSplitInput">
+            <span>Split</span>
+            <input
+              id="keybindSplitInput"
+              class="keybind-input"
+              type="text"
+              maxlength="1"
+              autocomplete="off"
+            />
+          </label>
+        </div>
+        <p class="bankroll-help">
+          Use single-character keys. Duplicate keys are not allowed.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="closeKeybindsBtn">Close</button>
+          <button class="btn btn-cancel" id="resetKeybindsBtn">
+            Reset Defaults
+          </button>
+          <button class="btn-apply" id="saveKeybindsBtn">Save Keybinds</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="table">
+      <div class="zone-label">
+        ⬆ Dealer
+        <span
+          class="turn-indicator your-turn"
+          id="dealerTurn"
+          style="display: none"
+          >Dealer Turn</span
+        >
+      </div>
+      <div class="hand-area">
+        <div class="hand-row" id="dealerHand"></div>
+        <div class="score-badge" id="dealerScore">–</div>
+      </div>
+
+      <div class="divider">
+        <div class="divider-line"></div>
+        <span class="divider-diamond">♦ ♣ ♦</span>
+        <div class="divider-line"></div>
+      </div>
+
+      <div id="resultBanner" style="display: none" class="result-banner">
+        <div class="result-text" id="resultText"></div>
+        <div class="result-sub" id="resultSub"></div>
+        <div class="result-pay" id="resultPay"></div>
+      </div>
+
+      <div class="status-bar" id="statusBar">
+        Place your bet using the chips below, then press Deal.
+      </div>
+      <div class="phase-indicator" id="phasePips"></div>
+
+      <div class="bet-zone">
+        <div class="chips" id="chipTray">
+          <button class="chip chip-1" data-chip-index="0">$1</button>
+          <button class="chip chip-5" data-chip-index="1">$5</button>
+          <button class="chip chip-10" data-chip-index="2">$10</button>
+          <button class="chip chip-25" data-chip-index="3">$25</button>
+          <button class="chip chip-50" data-chip-index="4">$50</button>
+          <button class="chip chip-100" data-chip-index="5">$100</button>
+          <button class="chip chip-undo" data-action="clear">✕</button>
+        </div>
+      </div>
+
+      <div class="hand-area" id="playerHandsArea"></div>
+      <div class="zone-label">
+        ⬇ Player
+        <span
+          class="turn-indicator your-turn"
+          id="playerTurn"
+          style="display: none"
+          >Player Turn</span
+        >
+      </div>
+    </div>
+
+    <div class="actions" id="actions"></div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
