@@ -64,6 +64,7 @@ const state = {
   simulationCancelRequested: false,
   pendingSimulationParams: null,
   newlyDrawnCards: [],
+  handsPlayed: 0,
 };
 
 const ui = {};
@@ -189,6 +190,7 @@ function init() {
     resultSub: $("resultSub"),
     resultPay: $("resultPay"),
     statusBar: $("statusBar"),
+    handsCounter: $("handsCounter"),
     phasePips: $("phasePips"),
     actions: $("actions"),
     table: document.querySelector(".table"),
@@ -1373,6 +1375,11 @@ function renderBalances() {
   ui.dealerBal.className = `balance-amount${state.bankrolls.dealer <= 0 ? " low" : ""}`;
 }
 
+function renderHandsCounter() {
+  if (!ui.handsCounter) return;
+  ui.handsCounter.textContent = `Hands played: ${state.handsPlayed}`;
+}
+
 function onChipTrayClick(event) {
   const chip = event.target.closest("button.chip");
   if (!chip || chip.disabled) return;
@@ -2173,6 +2180,7 @@ function settleStandardRound() {
 function concludeRound(type, title, subtitle, payText) {
   const playerDelta = state.bankrolls.player - state.roundStartBankrolls.player;
   const dealerDelta = state.bankrolls.dealer - state.roundStartBankrolls.dealer;
+  state.handsPlayed += 1;
   state.phase = "done";
   state.dealerHidden = false;
   state.dealerAutoRunning = false;
@@ -2435,6 +2443,7 @@ function setStatus(message, alert = false) {
 
 function render() {
   renderBalances();
+  renderHandsCounter();
   renderDealerHand();
   renderPlayerHands();
   renderButtons();
