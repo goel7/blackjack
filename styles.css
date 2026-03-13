@@ -215,13 +215,19 @@ h1 {
 .balance-change {
   font-size: 0.85rem;
   font-style: italic;
-  min-height: 1.1em;
+  min-height: 0;
+  height: 0;
+  overflow: hidden;
 }
 .balance-change.up {
+  min-height: 1.1em;
+  height: auto;
   color: #7fff7f;
   animation: fadeSlide 0.4s ease-out;
 }
 .balance-change.down {
+  min-height: 1.1em;
+  height: auto;
   color: var(--red);
   animation: fadeSlide 0.4s ease-out;
 }
