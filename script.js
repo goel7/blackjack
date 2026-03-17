@@ -142,9 +142,6 @@ function init() {
     playerBal: $("playerBal"),
     dealerBal: $("dealerBal"),
     betDisplay: $("betDisplay"),
-    playerChg: $("playerChg"),
-    dealerChg: $("dealerChg"),
-    betChg: $("betChg"),
     settingsBtn: $("settingsBtn"),
     settingsMenu: $("settingsMenu"),
     assistedToggle: $("assistedToggle"),
@@ -182,7 +179,6 @@ function init() {
     keybindDoubleInput: $("keybindDoubleInput"),
     keybindSplitInput: $("keybindSplitInput"),
     dealerHand: $("dealerHand"),
-    dealerScore: $("dealerScore"),
     playerHandsArea: $("playerHandsArea"),
     chipTray: $("chipTray"),
     resultBanner: $("resultBanner"),
@@ -913,14 +909,19 @@ function getPairRankForSimulation(hand) {
 }
 
 function canSplitSimulationHand(hand, handIndex, handCount, bankrolls) {
-  return (
-    handIndex === 0 &&
-    handCount === 1 &&
-    hand.length === 2 &&
-    hand[0].val === hand[1].val &&
-    bankrolls.player >= bankrolls.additionalStake &&
-    bankrolls.dealer >= bankrolls.additionalStake
-  );
+  const isPair = hand.length === 2 && hand[0].val === hand[1].val;
+  if (!isPair) return false;
+  if (
+    bankrolls.player < bankrolls.additionalStake ||
+    bankrolls.dealer < bankrolls.additionalStake
+  ) {
+    return false;
+  }
+
+  const isAcePair = hand[0].val === "A";
+  if (isAcePair) return handIndex === 0 && handCount === 1;
+
+  return hand.length === 2 && handCount < 4;
 }
 
 function getSimulationStrategyAction({
@@ -1269,26 +1270,6 @@ function formatSignedMoney(amount) {
   return `${amount >= 0 ? "+" : "-"}$${formatted}`;
 }
 
-function clearChange(id) {
-  const el = $(id);
-  if (!el) return;
-  el.innerHTML = "&nbsp;";
-  el.className = "balance-change";
-}
-
-function showChange(id, delta) {
-  const el = $(id);
-  if (!el) return;
-  if (!delta) {
-    clearChange(id);
-    return;
-  }
-  el.textContent = `${delta > 0 ? "+" : "-"}${formatMoney(Math.abs(delta)).slice(1)}`;
-  el.className = `balance-change ${delta > 0 ? "up" : "down"}`;
-  clearTimeout(el._timeout);
-  el._timeout = window.setTimeout(() => clearChange(id), 3200);
-}
-
 function syncBankrollInputs() {
   ui.playerBankrollInput.value = String(state.bankrolls.player);
   ui.dealerBankrollInput.value = String(state.bankrolls.dealer);
@@ -1363,7 +1344,6 @@ function applyAutomaticBetIfConfigured() {
 
   const placed = Math.min(state.autoBetAmount, maxPlayable);
   state.currentBet = placed;
-  clearChange("betChg");
   return placed;
 }
 
@@ -1425,7 +1405,6 @@ function addBet(amount) {
   }
   const added = Math.min(amount, maxAdditional);
   state.currentBet += added;
-  showChange("betChg", added);
   setStatus(`Bet: ${formatMoney(state.currentBet)} — press Deal when ready.`);
   render();
 }
@@ -1433,7 +1412,6 @@ function addBet(amount) {
 function clearBet() {
   if (state.phase !== "betting") return;
   state.currentBet = 0;
-  clearChange("betChg");
   setStatus("Place your bet using the chips below, then press Deal.");
   render();
 }
@@ -1459,7 +1437,6 @@ function applyBankrollSetup() {
   refreshChipDenominations(state.bankrolls.player);
   resetHandStateForBetting();
   applyAutomaticBetIfConfigured();
-  clearRoundChangeIndicators();
   closeBankrollModal();
   if (state.currentBet > 0) {
     setStatus(
@@ -1471,12 +1448,6 @@ function applyBankrollSetup() {
     );
   }
   render();
-}
-
-function clearRoundChangeIndicators() {
-  clearChange("playerChg");
-  clearChange("dealerChg");
-  clearChange("betChg");
 }
 
 function resetHandStateForBetting() {
@@ -1934,16 +1905,21 @@ function canDouble() {
 
 function canSplit() {
   if (state.phase !== "player") return false;
-  if (state.playerHands.length !== 1 || state.activePlayerHand !== 0)
+  const handIndex = state.activePlayerHand;
+  const hand = state.playerHands[handIndex];
+  if (!hand) return false;
+  const isPair = hand.length === 2 && hand[0].val === hand[1].val;
+  if (!isPair || state.playerStood[handIndex]) return false;
+  const splitBet = state.playerHandBets[handIndex];
+  if (state.bankrolls.player < splitBet || state.bankrolls.dealer < splitBet) {
     return false;
-  const hand = state.playerHands[0];
-  return (
-    hand.length === 2 &&
-    hand[0].val === hand[1].val &&
-    !state.playerStood[0] &&
-    state.bankrolls.player >= state.playerHandBets[0] &&
-    state.bankrolls.dealer >= state.playerHandBets[0]
-  );
+  }
+
+  const isAcePair = hand[0].val === "A";
+  if (isAcePair)
+    return state.playerHands.length === 1 && state.activePlayerHand === 0;
+
+  return state.playerHands.length < 4;
 }
 
 function playerHit() {
@@ -1983,7 +1959,6 @@ function playerDouble() {
   if (!deductStakeFromBoth(extra)) return;
   state.playerHandBets[handIndex] += extra;
   state.currentBet += extra;
-  showChange("betChg", extra);
   drawCard("player", handIndex);
   const score = handValue(state.playerHands[handIndex]);
   state.playerStood[handIndex] = true;
@@ -2001,27 +1976,34 @@ function playerDouble() {
 
 function playerSplit() {
   if (!canSplit()) {
-    setStatus("Split is only available on the first matching pair.", true);
+    setStatus(
+      "Split requires a live matching pair (non-aces can split up to 4 hands total).",
+      true,
+    );
     return;
   }
-  const splitBet = state.playerHandBets[0];
+  const handIndex = state.activePlayerHand;
+  const splitBet = state.playerHandBets[handIndex];
   if (!deductStakeFromBoth(splitBet)) return;
   state.currentBet += splitBet;
-  showChange("betChg", splitBet);
-  const [cardA, cardB] = state.playerHands[0];
+  const [cardA, cardB] = state.playerHands[handIndex];
   const isAceSplit = cardA.val === "A" && cardB.val === "A";
-  state.playerHands = [[cardA], [cardB]];
-  state.playerHandBets = [splitBet, splitBet];
-  state.playerHandNaturalEligible = [false, false];
-  state.playerStood = isAceSplit ? [true, true] : [false, false];
-  state.playerBusted = [false, false];
-  state.activePlayerHand = 0;
-  drawCard("player", 0);
-  drawCard("player", 1);
+  state.playerHands.splice(handIndex, 1, [cardA], [cardB]);
+  state.playerHandBets.splice(handIndex, 1, splitBet, splitBet);
+  state.playerHandNaturalEligible.splice(handIndex, 1, false, false);
+  state.playerStood.splice(handIndex, 1, isAceSplit, isAceSplit);
+  state.playerBusted.splice(handIndex, 1, false, false);
+  state.activePlayerHand = handIndex;
+  drawCard("player", handIndex);
+  drawCard("player", handIndex + 1);
   if (!isAceSplit) {
-    if (handValue(state.playerHands[0]) === 21) state.playerStood[0] = true;
-    if (handValue(state.playerHands[1]) === 21) state.playerStood[1] = true;
-    setStatus("Player splits into two hands.");
+    if (handValue(state.playerHands[handIndex]) === 21)
+      state.playerStood[handIndex] = true;
+    if (handValue(state.playerHands[handIndex + 1]) === 21)
+      state.playerStood[handIndex + 1] = true;
+    setStatus(
+      `Hand ${handIndex + 1} split. ${state.playerHands.length} active hand${state.playerHands.length === 1 ? "" : "s"}.`,
+    );
     render();
     return;
   }
@@ -2178,16 +2160,11 @@ function settleStandardRound() {
 }
 
 function concludeRound(type, title, subtitle, payText) {
-  const playerDelta = state.bankrolls.player - state.roundStartBankrolls.player;
-  const dealerDelta = state.bankrolls.dealer - state.roundStartBankrolls.dealer;
   state.handsPlayed += 1;
   state.phase = "done";
   state.dealerHidden = false;
   state.dealerAutoRunning = false;
   state.currentBet = 0;
-  showChange("playerChg", playerDelta);
-  showChange("dealerChg", dealerDelta);
-  clearChange("betChg");
   showResult(type, title, subtitle, payText);
   render();
 }
@@ -2289,7 +2266,7 @@ function cardMarkup(card, hidden, isFreshlyDrawn = false) {
   if (hidden)
     return `<div class="card hidden${isFreshlyDrawn ? " card-drawn" : ""}"></div>`;
   const isRed = card.suit === "♥" || card.suit === "♦";
-  return `<div class="card ${isRed ? "red" : "black"}${isFreshlyDrawn ? " card-drawn" : ""}"><div class="card-corner">${card.val}<br>${card.suit}</div><div class="card-suit-center">${card.suit}</div><div class="card-corner bottom">${card.val}<br>${card.suit}</div></div>`;
+  return `<div class="card ${isRed ? "red" : "black"}${isFreshlyDrawn ? " card-drawn" : ""}"><div class="card-corner"><span class="card-rank">${card.val}</span><br><span class="card-suit">${card.suit}</span></div><div class="card-suit-center">${card.suit}</div><div class="card-corner bottom"><span class="card-rank">${card.val}</span><br><span class="card-suit">${card.suit}</span></div></div>`;
 }
 
 function renderDealerHand() {
@@ -2302,36 +2279,14 @@ function renderDealerHand() {
       ),
     )
     .join("");
-  if (!state.dealerHand.length) {
-    ui.dealerScore.textContent = "–";
-    ui.dealerScore.className = "score-badge";
-    return;
-  }
-  ui.dealerScore.textContent = state.dealerHidden
-    ? `${handValue(state.dealerHand.slice(0, 1))}+`
-    : String(handValue(state.dealerHand));
-  ui.dealerScore.className = "score-badge";
-  if (!state.dealerHidden) {
-    const score = handValue(state.dealerHand);
-    if (score > 21) ui.dealerScore.className += " bust";
-    else if (isBlackjack(state.dealerHand))
-      ui.dealerScore.className += " blackjack";
-  }
-}
-
-function getScoreBadgeClass(hand, busted, naturalEligible = true) {
-  let className = "score-badge";
-  if (busted) className += " bust";
-  else if (isNaturalBlackjack(hand, naturalEligible)) className += " blackjack";
-  return className;
 }
 
 function renderPlayerHands() {
   if (!state.playerHands.length || !state.playerHands[0].length) {
-    ui.playerHandsArea.innerHTML =
-      '<div class="hand-row"></div><div class="score-badge">–</div>';
+    ui.playerHandsArea.innerHTML = '<div class="hand-row"></div>';
     return;
   }
+  const showHandLabels = state.playerHands.length > 1;
   const html = state.playerHands
     .map((hand, index) => {
       const active =
@@ -2341,7 +2296,7 @@ function renderPlayerHands() {
       return `
         <div class="player-hand-panel${active ? " active" : ""}">
           <div class="player-hand-meta">
-            <span class="hand-caption">Hand ${index + 1}</span>
+            ${showHandLabels ? `<span class="hand-caption">Hand ${index + 1}</span>` : ""}
             <span class="bet-pill">Bet ${formatMoney(state.playerHandBets[index])}</span>
           </div>
           <div class="hand-row">${hand
@@ -2349,11 +2304,6 @@ function renderPlayerHands() {
               cardMarkup(card, false, state.newlyDrawnCards.includes(card)),
             )
             .join("")}</div>
-          <div class="${getScoreBadgeClass(
-            hand,
-            state.playerBusted[index],
-            state.playerHandNaturalEligible[index],
-          )}">${handValue(hand)}</div>
         </div>
       `;
     })
@@ -2386,11 +2336,11 @@ function renderPhase() {
     { key: "bet", label: "Bet" },
     { key: "player", label: "Player" },
     { key: "dealer", label: "Dealer" },
-    { key: "done", label: "Resolve" },
   ];
-  const order = ["bet", "player", "dealer", "done"];
+  const order = ["bet", "player", "dealer"];
   const current = state.phase === "betting" ? "bet" : state.phase;
-  const currentIndex = order.indexOf(current);
+  const currentIndex =
+    current === "done" ? order.length : order.indexOf(current);
   ui.phasePips.innerHTML = phases
     .map((phase, index) => {
       let className = "phase-pip";
