@@ -12,6 +12,10 @@
   </head>
   <body>
     <div class="settings-wrap">
+      <button class="rules-btn" id="rulesBtn" title="View house rules">
+        📋 Rules
+      </button>
+      <button class="log-btn" id="logBtn" title="View hand log">📊 Log</button>
       <button class="settings-btn" id="settingsBtn" aria-expanded="false">
         ⚙ Settings
       </button>
@@ -215,6 +219,79 @@
       </section>
     </div>
 
+    <div class="modal-backdrop" id="rulesModal" aria-hidden="true">
+      <section
+        class="modal-card modal-card-rules"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rulesTitle"
+      >
+        <div class="bankroll-title" id="rulesTitle">House Rules</div>
+        <div class="rules-content" id="rulesContent">
+          <!-- Rules populated by JavaScript -->
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="closeRulesBtn">Close</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="logModal" aria-hidden="true">
+      <section
+        class="modal-card modal-card-log"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="logTitle"
+      >
+        <div class="bankroll-title" id="logTitle">Hand Log</div>
+        <div class="log-stats">
+          <div class="log-stat">
+            <span class="log-stat-label">Hands Played</span>
+            <span class="log-stat-value" id="logHandCount">0</span>
+          </div>
+          <div class="log-stat">
+            <span class="log-stat-label">Optimal Decisions</span>
+            <span class="log-stat-value" id="logOptimalCount">0%</span>
+          </div>
+        </div>
+        <div class="log-controls">
+          <button
+            class="settings-action log-filter-btn"
+            id="toggleMistakesOnlyBtn"
+            type="button"
+            aria-pressed="false"
+          >
+            Show mistakes only: Off
+          </button>
+        </div>
+        <div class="log-content" id="logContent">
+          <!-- Hand entries populated by JavaScript -->
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="clearLogBtn">Clear Log</button>
+          <button class="btn btn-cancel" id="closeLogBtn">Close</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="clearLogModal" aria-hidden="true">
+      <section
+        class="modal-card modal-card-warning"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="clearLogTitle"
+      >
+        <div class="warning-badge">🗑 Clear Hand Log</div>
+        <div class="bankroll-title" id="clearLogTitle">
+          Delete all logged hands?
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="cancelClearLogBtn">Cancel</button>
+          <button class="btn-apply" id="confirmClearLogBtn">Clear Log</button>
+        </div>
+      </section>
+    </div>
+
     <div class="modal-backdrop" id="keybindsModal" aria-hidden="true">
       <section
         class="modal-card modal-card-keybinds"
@@ -268,6 +345,16 @@
             <span>Split</span>
             <input
               id="keybindSplitInput"
+              class="keybind-input"
+              type="text"
+              maxlength="1"
+              autocomplete="off"
+            />
+          </label>
+          <label class="keybind-row" for="keybindSurrenderInput">
+            <span>Surrender</span>
+            <input
+              id="keybindSurrenderInput"
               class="keybind-input"
               type="text"
               maxlength="1"

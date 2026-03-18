@@ -31,6 +31,7 @@ const DEFAULT_KEYBINDS = {
   stand: "s",
   double: "f",
   split: "p",
+  surrender: "u",
 };
 
 const state = {
@@ -41,6 +42,7 @@ const state = {
   playerHandNaturalEligible: [true],
   playerStood: [false],
   playerBusted: [false],
+  playerSurrendered: [false],
   activePlayerHand: 0,
   dealerHidden: true,
   phase: "betting",
@@ -65,6 +67,9 @@ const state = {
   pendingSimulationParams: null,
   newlyDrawnCards: [],
   handsPlayed: 0,
+  handLog: [],
+  currentHandEntry: null,
+  logShowOnlyMistakes: false,
 };
 
 const ui = {};
@@ -178,6 +183,22 @@ function init() {
     keybindStandInput: $("keybindStandInput"),
     keybindDoubleInput: $("keybindDoubleInput"),
     keybindSplitInput: $("keybindSplitInput"),
+    keybindSurrenderInput: $("keybindSurrenderInput"),
+    rulesBtn: $("rulesBtn"),
+    rulesModal: $("rulesModal"),
+    rulesContent: $("rulesContent"),
+    closeRulesBtn: $("closeRulesBtn"),
+    logBtn: $("logBtn"),
+    logModal: $("logModal"),
+    logContent: $("logContent"),
+    logHandCount: $("logHandCount"),
+    logOptimalCount: $("logOptimalCount"),
+    toggleMistakesOnlyBtn: $("toggleMistakesOnlyBtn"),
+    clearLogBtn: $("clearLogBtn"),
+    closeLogBtn: $("closeLogBtn"),
+    clearLogModal: $("clearLogModal"),
+    cancelClearLogBtn: $("cancelClearLogBtn"),
+    confirmClearLogBtn: $("confirmClearLogBtn"),
     dealerHand: $("dealerHand"),
     playerHandsArea: $("playerHandsArea"),
     chipTray: $("chipTray"),
@@ -233,6 +254,23 @@ function init() {
   ui.keybindsModal.addEventListener("click", (event) => {
     if (event.target === ui.keybindsModal) closeKeybindsModal();
   });
+  ui.rulesModal.addEventListener("click", (event) => {
+    if (event.target === ui.rulesModal) closeRulesModal();
+  });
+  ui.rulesBtn.addEventListener("click", openRulesModal);
+  ui.closeRulesBtn.addEventListener("click", closeRulesModal);
+  ui.logModal.addEventListener("click", (event) => {
+    if (event.target === ui.logModal) closeLogModal();
+  });
+  ui.clearLogModal.addEventListener("click", (event) => {
+    if (event.target === ui.clearLogModal) closeClearLogModal();
+  });
+  ui.logBtn.addEventListener("click", openLogModal);
+  ui.closeLogBtn.addEventListener("click", closeLogModal);
+  ui.toggleMistakesOnlyBtn.addEventListener("click", toggleMistakesOnly);
+  ui.clearLogBtn.addEventListener("click", clearHandLog);
+  ui.cancelClearLogBtn.addEventListener("click", closeClearLogModal);
+  ui.confirmClearLogBtn.addEventListener("click", confirmClearHandLog);
   document.addEventListener("keydown", onGlobalKeyDown);
   document.addEventListener("click", (event) => {
     if (!state.settingsOpen) return;
@@ -306,6 +344,7 @@ function renderKeybindInputs() {
   ui.keybindStandInput.value = state.keybinds.stand;
   ui.keybindDoubleInput.value = state.keybinds.double;
   ui.keybindSplitInput.value = state.keybinds.split;
+  ui.keybindSurrenderInput.value = state.keybinds.surrender;
 }
 
 function openKeybindsModal() {
@@ -327,6 +366,7 @@ function saveKeybindsFromModal() {
     stand: normalizeKeybindChar(ui.keybindStandInput.value),
     double: normalizeKeybindChar(ui.keybindDoubleInput.value),
     split: normalizeKeybindChar(ui.keybindSplitInput.value),
+    surrender: normalizeKeybindChar(ui.keybindSurrenderInput.value),
   };
 
   const keys = Object.values(candidate);
@@ -352,6 +392,204 @@ function resetKeybindsToDefault() {
   renderKeybindInputs();
   savePersistentSettings();
   setStatus("Keybinds reset to defaults.");
+}
+
+function closeTopBarModalPair(except) {
+  if (except !== "rules") closeRulesModal();
+  if (except !== "log") closeLogModal();
+}
+
+function openRulesModal() {
+  closeTopBarModalPair("rules");
+  closeSettingsMenu();
+  renderRules();
+  ui.rulesModal.classList.add("open");
+  ui.rulesModal.setAttribute("aria-hidden", "false");
+}
+
+function closeRulesModal() {
+  ui.rulesModal.classList.remove("open");
+  ui.rulesModal.setAttribute("aria-hidden", "true");
+}
+
+function renderRules() {
+  const rules = [];
+
+  rules.push(`<div class="rule-item">
+    <strong>Decks:</strong> 1 deck, shuffled every hand
+  </div>`);
+
+  rules.push(`<div class="rule-item">
+    <strong>Blackjack Payout:</strong> ${state.blackjackPayout}
+  </div>`);
+
+  rules.push(`<div class="rule-item">
+    <strong>Dealer Rule:</strong> ${state.dealerRule === "H17" ? "Hits on soft 17" : "Stands on soft 17"}
+  </div>`);
+
+  rules.push(`<div class="rule-item">
+    <strong>DAS (Double After Split):</strong> ${DAS_OFFERED ? "Allowed" : "Not allowed"}
+  </div>`);
+
+  rules.push(`<div class="rule-item">
+    <strong>Resplitting:</strong> Allowed for non-aces (up to 4 total hands)
+  </div>`);
+
+  rules.push(`<div class="rule-item">
+    <strong>Resplit Aces:</strong> Not allowed
+  </div>`);
+
+  rules.push(`<div class="rule-item">
+    <strong>Surrender:</strong> Late surrender — loses full bet vs dealer blackjack, otherwise loses half bet
+  </div>`);
+
+  ui.rulesContent.innerHTML = rules.join("");
+}
+
+function openLogModal() {
+  closeTopBarModalPair("log");
+  closeSettingsMenu();
+  renderLogFilterButton();
+  renderHandLog();
+  ui.logModal.classList.add("open");
+  ui.logModal.setAttribute("aria-hidden", "false");
+}
+
+function closeLogModal() {
+  ui.logModal.classList.remove("open");
+  ui.logModal.setAttribute("aria-hidden", "true");
+}
+
+function renderLogFilterButton() {
+  if (!ui.toggleMistakesOnlyBtn) return;
+  const active = state.logShowOnlyMistakes;
+  ui.toggleMistakesOnlyBtn.textContent = `Show mistakes only: ${
+    active ? "On" : "Off"
+  }`;
+  ui.toggleMistakesOnlyBtn.setAttribute("aria-pressed", String(active));
+  ui.toggleMistakesOnlyBtn.classList.toggle("active", active);
+}
+
+function toggleMistakesOnly() {
+  state.logShowOnlyMistakes = !state.logShowOnlyMistakes;
+  renderLogFilterButton();
+  renderHandLog();
+}
+
+function clearHandLog() {
+  if (!state.handLog.length) {
+    setStatus("Hand log is already empty.");
+    return;
+  }
+  openClearLogModal();
+}
+
+function openClearLogModal() {
+  ui.clearLogModal.classList.add("open");
+  ui.clearLogModal.setAttribute("aria-hidden", "false");
+}
+
+function closeClearLogModal() {
+  ui.clearLogModal.classList.remove("open");
+  ui.clearLogModal.setAttribute("aria-hidden", "true");
+}
+
+function confirmClearHandLog() {
+  state.handLog = [];
+  closeClearLogModal();
+  closeLogModal();
+  setStatus("Hand log cleared.");
+}
+
+function renderHandLog() {
+  const log = state.handLog;
+  const visibleLog = state.logShowOnlyMistakes
+    ? log.filter((hand) => hand.actions.some((action) => !action.isOptimal))
+    : log;
+
+  if (!log.length) {
+    ui.logContent.innerHTML =
+      '<div style="padding: 20px; text-align: center; color: rgba(245, 234, 216, 0.5);">No hands recorded yet.</div>';
+    ui.logHandCount.textContent = "0";
+    ui.logOptimalCount.textContent = "0%";
+    renderLogFilterButton();
+    return;
+  }
+
+  if (!visibleLog.length) {
+    ui.logContent.innerHTML =
+      '<div style="padding: 20px; text-align: center; color: rgba(245, 234, 216, 0.6);">No suboptimal hands found 🎉</div>';
+    ui.logHandCount.textContent = String(log.length);
+    const totals = log.flatMap((hand) => hand.actions);
+    const optimalCount = totals.filter((action) => action.isOptimal).length;
+    const optimalPercent =
+      totals.length > 0 ? Math.round((optimalCount / totals.length) * 100) : 0;
+    ui.logOptimalCount.textContent = `${optimalPercent}%`;
+    renderLogFilterButton();
+    return;
+  }
+
+  let totalActions = 0;
+  let optimalActions = 0;
+
+  const formatDealerUpcard = (upcard) => {
+    if (upcard === 11) return "A";
+    if (upcard === 10) return "10";
+    if (Number.isFinite(upcard)) return String(upcard);
+    return "?";
+  };
+
+  const entries = visibleLog.map((hand) => {
+    const actionsHtml = hand.actions
+      .map((action) => {
+        totalActions += 1;
+        if (action.isOptimal) optimalActions += 1;
+        const optimalText =
+          action.action === action.optimalAction
+            ? "✓ Optimal"
+            : `⚠ Should be ${action.optimalAction}`;
+        const className = action.isOptimal ? "optimal" : "suboptimal";
+        return `
+          <div class="log-action ${className}">
+            <span>H${action.handNumber}: <strong>${action.playerCards}</strong> (${action.playerTotal})</span>
+            <span><strong>${action.action}</strong></span>
+            <span class="log-action-optimal-badge">${optimalText}</span>
+          </div>
+        `;
+      })
+      .join("");
+
+    const resultClass = hand.result || "push";
+    const resultText = hand.result
+      ? hand.result.charAt(0).toUpperCase() + hand.result.slice(1)
+      : "Unknown";
+    const dealerUpcardText = formatDealerUpcard(hand.dealerUpcard);
+    const deltaText =
+      hand.playerDelta !== null
+        ? hand.playerDelta >= 0
+          ? `+${formatMoney(hand.playerDelta)}`
+          : `-${formatMoney(Math.abs(hand.playerDelta))}`
+        : "—";
+
+    return `
+      <div class="log-entry">
+        <div class="log-entry-header">
+          <span class="log-entry-round">Hand #${hand.roundNumber}</span>
+          <span class="log-entry-result ${resultClass}">${resultText}</span>
+          <span style="margin-left: auto; color: var(--gold-light);">${deltaText}</span>
+        </div>
+        <div class="log-entry-context">Dealer upcard: <strong>${dealerUpcardText}</strong></div>
+        <div class="log-entry-actions">${actionsHtml}</div>
+      </div>
+    `;
+  });
+
+  ui.logContent.innerHTML = entries.join("");
+  ui.logHandCount.textContent = String(log.length);
+  const optimalPercent =
+    totalActions > 0 ? Math.round((optimalActions / totalActions) * 100) : 0;
+  ui.logOptimalCount.textContent = `${optimalPercent}%`;
+  renderLogFilterButton();
 }
 
 function onSimulateRunsClick() {
@@ -879,6 +1117,114 @@ function simulateManyHands({
   return summary;
 }
 
+// Hand logging system
+function getOptimalAction(
+  playerHand,
+  dealerUpcard,
+  canDouble,
+  canSplit,
+  canSurrender,
+) {
+  return getSimulationStrategyAction({
+    hand: playerHand,
+    dealerUpcard,
+    canDouble,
+    canSplit,
+    canSurrender,
+  });
+}
+
+function getDealerUpcardValue(dealerHand) {
+  if (!dealerHand.length) return null;
+  const upcard = dealerHand[0];
+  if (upcard.val === "A") return 11;
+  if (isTenValueCard(upcard)) return 10;
+  return Number(upcard.val);
+}
+
+function serializeCards(cards) {
+  return cards.map((c) => `${c.val}${c.suit}`).join(" ");
+}
+
+function initializeHandEntry() {
+  const dealerUpcard = getDealerUpcardValue(state.dealerHand);
+  state.currentHandEntry = {
+    roundNumber: state.handsPlayed + 1,
+    dealerUpcard,
+    actions: [],
+    result: null,
+    playerDelta: null,
+  };
+}
+
+function recordPlayerAction(handIndex, action, playerHand) {
+  if (!state.currentHandEntry) return;
+
+  const canDouble = canDoubleForLogging(handIndex);
+  const canSplit = canSplitForLogging(handIndex);
+  const canSurrender = canSurrenderForLogging(handIndex);
+  const dealerUpcard = state.currentHandEntry.dealerUpcard;
+  const optimalAction = getOptimalAction(
+    playerHand,
+    dealerUpcard,
+    canDouble,
+    canSplit,
+    canSurrender,
+  );
+  const isOptimal = action === optimalAction;
+
+  state.currentHandEntry.actions.push({
+    handNumber: handIndex + 1,
+    playerCards: serializeCards(playerHand),
+    playerTotal: handValue(playerHand),
+    action,
+    optimalAction,
+    isOptimal,
+  });
+}
+
+function canDoubleForLogging(handIndex) {
+  const hand = state.playerHands[handIndex];
+  if (!hand || hand.length !== 2) return false;
+  if (!state.playerHandNaturalEligible[handIndex]) return false;
+  const requiredBet = state.playerHandBets[handIndex];
+  return (
+    state.bankrolls.player >= requiredBet &&
+    state.bankrolls.dealer >= requiredBet
+  );
+}
+
+function canSplitForLogging(handIndex) {
+  const hand = state.playerHands[handIndex];
+  if (!hand || hand.length !== 2) return false;
+  if (hand[0].val !== hand[1].val) return false;
+  const isAcePair = hand[0].val === "A";
+  if (isAcePair && handIndex !== 0) return false;
+  if (isAcePair && state.playerHands.length > 1) return false;
+  if (!isAcePair && state.playerHands.length >= 4) return false;
+  const requiredBet = state.playerHandBets[handIndex];
+  return (
+    state.bankrolls.player >= requiredBet &&
+    state.bankrolls.dealer >= requiredBet
+  );
+}
+
+function canSurrenderForLogging(handIndex) {
+  const hand = state.playerHands[handIndex];
+  if (!hand || hand.length !== 2) return false;
+  if (!state.playerHandNaturalEligible[handIndex]) return false;
+  if (state.playerStood[handIndex]) return false;
+  if (state.playerBusted[handIndex]) return false;
+  if (state.playerSurrendered[handIndex]) return false;
+  return true;
+}
+
+function finalizeHandEntry() {
+  if (!state.currentHandEntry) return;
+  state.handLog.push(state.currentHandEntry);
+  state.currentHandEntry = null;
+}
+
 function createShuffledDeckForSimulation() {
   const deck = [];
   for (const suit of SUITS) {
@@ -929,6 +1275,7 @@ function getSimulationStrategyAction({
   dealerUpcard,
   canDouble,
   canSplit,
+  canSurrender,
 }) {
   const pairRank = canSplit ? getPairRankForSimulation(hand) : null;
 
@@ -985,6 +1332,19 @@ function getSimulationStrategyAction({
         ? "Double"
         : "Hit";
     }
+  }
+
+  if (
+    !isSoft &&
+    canSurrender &&
+    total === 16 &&
+    [9, 10, 11].includes(dealerUpcard)
+  ) {
+    return "Surrender";
+  }
+
+  if (!isSoft && canSurrender && total === 15 && dealerUpcard === 10) {
+    return "Surrender";
   }
 
   if (total >= 17) return "Stand";
@@ -1053,6 +1413,7 @@ function simulateSingleHand({
       naturalEligible: true,
       aceSplitLocked: false,
       busted: false,
+      surrendered: false,
     },
   ];
 
@@ -1093,20 +1454,6 @@ function simulateSingleHand({
       handPushes,
     };
   }
-  if (dealerNatural) {
-    simulatedDealerBankroll += baseBet * 2;
-    dealerHandWins += 1;
-    return {
-      playerDelta: simulatedPlayerBankroll - playerBankroll,
-      dealerDelta: simulatedDealerBankroll - dealerBankroll,
-      totalWagered,
-      doubles,
-      splits,
-      playerHandWins,
-      dealerHandWins,
-      handPushes,
-    };
-  }
 
   let handIndex = 0;
   while (handIndex < hands.length) {
@@ -1121,6 +1468,7 @@ function simulateSingleHand({
         hand.cards.length === 2 &&
         simulatedPlayerBankroll >= hand.bet &&
         simulatedDealerBankroll >= hand.bet;
+      const canSurrender = hand.cards.length === 2 && hand.naturalEligible;
       const canSplit = canSplitSimulationHand(
         hand.cards,
         handIndex,
@@ -1137,6 +1485,7 @@ function simulateSingleHand({
         dealerUpcard,
         canDouble,
         canSplit,
+        canSurrender,
       });
 
       if (action === "Split" && canSplit) {
@@ -1150,6 +1499,7 @@ function simulateSingleHand({
           naturalEligible: false,
           aceSplitLocked: isAceSplit,
           busted: false,
+          surrendered: false,
         };
         hands.splice(handIndex + 1, 0, {
           cards: [cardB, drawSimCard(deck)],
@@ -1157,6 +1507,7 @@ function simulateSingleHand({
           naturalEligible: false,
           aceSplitLocked: isAceSplit,
           busted: false,
+          surrendered: false,
         });
         hand = hands[handIndex];
         continue;
@@ -1168,6 +1519,11 @@ function simulateSingleHand({
         hand.bet *= 2;
         hand.cards.push(drawSimCard(deck));
         if (handValue(hand.cards) > 21) hand.busted = true;
+        break;
+      }
+
+      if (action === "Surrender" && canSurrender) {
+        hand.surrendered = true;
         break;
       }
 
@@ -1194,6 +1550,17 @@ function simulateSingleHand({
   const dealerValid = dealerScore <= 21;
   const dealerBlackjack = isBlackjack(dealerHand);
   for (const hand of hands) {
+    if (hand.surrendered) {
+      if (dealerBlackjack) {
+        simulatedDealerBankroll += hand.bet * 2;
+      } else {
+        const refund = hand.bet / 2;
+        simulatedPlayerBankroll += refund;
+        simulatedDealerBankroll += hand.bet + refund;
+      }
+      dealerHandWins += 1;
+      continue;
+    }
     const playerScore = handValue(hand.cards);
     const playerValid = playerScore <= 21;
     const playerBlackjack = isNaturalBlackjack(
@@ -1211,10 +1578,13 @@ function simulateSingleHand({
     } else if (dealerBlackjack && playerScore === 21 && !playerBlackjack) {
       simulatedDealerBankroll += wager * 2;
       dealerHandWins += 1;
+    } else if (!playerValid) {
+      simulatedDealerBankroll += wager * 2;
+      dealerHandWins += 1;
     } else if (playerValid && (!dealerValid || playerScore > dealerScore)) {
       simulatedPlayerBankroll += wager * 2;
       playerHandWins += 1;
-    } else if (dealerValid && (!playerValid || dealerScore > playerScore)) {
+    } else if (dealerValid && dealerScore > playerScore) {
       simulatedDealerBankroll += wager * 2;
       dealerHandWins += 1;
     } else {
@@ -1458,6 +1828,7 @@ function resetHandStateForBetting() {
   state.playerHandNaturalEligible = [true];
   state.playerStood = [false];
   state.playerBusted = [false];
+  state.playerSurrendered = [false];
   state.activePlayerHand = 0;
   state.dealerHidden = true;
   state.phase = "betting";
@@ -1594,6 +1965,7 @@ function getBasicStrategyRecommendation() {
 
   const doubleAllowed = canDouble();
   const splitAllowed = canSplit();
+  const surrenderAllowed = canSurrender();
   const pairRank = splitAllowed ? getPairRank(hand) : null;
   const dealerLabel = getDealerUpcardLabel();
 
@@ -1712,6 +2084,25 @@ function getBasicStrategyRecommendation() {
         reason: `Soft ${total} vs dealer ${dealerLabel}.`,
       };
     }
+  }
+
+  if (
+    !isSoft &&
+    surrenderAllowed &&
+    total === 16 &&
+    [9, 10, 11].includes(dealerUpcard)
+  ) {
+    return {
+      action: "Surrender",
+      reason: `Hard 16 vs dealer ${dealerLabel}.`,
+    };
+  }
+
+  if (!isSoft && surrenderAllowed && total === 15 && dealerUpcard === 10) {
+    return {
+      action: "Surrender",
+      reason: `Hard 15 vs dealer ${dealerLabel}.`,
+    };
   }
 
   if (total >= 17) {
@@ -1841,6 +2232,7 @@ function deal() {
   state.playerHandNaturalEligible = [true];
   state.playerStood = [false];
   state.playerBusted = [false];
+  state.playerSurrendered = [false];
   state.activePlayerHand = 0;
   state.dealerHidden = true;
   state.phase = "player";
@@ -1851,8 +2243,10 @@ function deal() {
   drawCard("dealer");
   drawCard("player", 0);
 
+  initializeHandEntry();
+
   hideResult();
-  setStatus("Player turn. Choose Hit, Stand, Double, or Split.");
+  setStatus("Player turn. Choose Hit, Stand, Double, Split, or Surrender.");
   render();
   if (handleInitialNaturals()) render();
 }
@@ -1922,9 +2316,24 @@ function canSplit() {
   return state.playerHands.length < 4;
 }
 
+function canSurrender() {
+  if (state.phase !== "player") return false;
+  const index = state.activePlayerHand;
+  const hand = state.playerHands[index];
+  return (
+    hand &&
+    hand.length === 2 &&
+    state.playerHandNaturalEligible[index] &&
+    !state.playerStood[index] &&
+    !state.playerBusted[index] &&
+    !state.playerSurrendered[index]
+  );
+}
+
 function playerHit() {
   if (state.phase !== "player") return;
   const handIndex = state.activePlayerHand;
+  recordPlayerAction(handIndex, "Hit", state.playerHands[handIndex]);
   drawCard("player", handIndex);
   const score = handValue(state.playerHands[handIndex]);
   if (score > 21) {
@@ -1945,6 +2354,7 @@ function playerHit() {
 function playerStand() {
   if (state.phase !== "player") return;
   const handIndex = state.activePlayerHand;
+  recordPlayerAction(handIndex, "Stand", state.playerHands[handIndex]);
   state.playerStood[handIndex] = true;
   advanceAfterPlayerAction(`Hand ${handIndex + 1} stands.`);
 }
@@ -1955,6 +2365,7 @@ function playerDouble() {
     return;
   }
   const handIndex = state.activePlayerHand;
+  recordPlayerAction(handIndex, "Double", state.playerHands[handIndex]);
   const extra = state.playerHandBets[handIndex];
   if (!deductStakeFromBoth(extra)) return;
   state.playerHandBets[handIndex] += extra;
@@ -1983,6 +2394,7 @@ function playerSplit() {
     return;
   }
   const handIndex = state.activePlayerHand;
+  recordPlayerAction(handIndex, "Split", state.playerHands[handIndex]);
   const splitBet = state.playerHandBets[handIndex];
   if (!deductStakeFromBoth(splitBet)) return;
   state.currentBet += splitBet;
@@ -1993,6 +2405,7 @@ function playerSplit() {
   state.playerHandNaturalEligible.splice(handIndex, 1, false, false);
   state.playerStood.splice(handIndex, 1, isAceSplit, isAceSplit);
   state.playerBusted.splice(handIndex, 1, false, false);
+  state.playerSurrendered.splice(handIndex, 1, false, false);
   state.activePlayerHand = handIndex;
   drawCard("player", handIndex);
   drawCard("player", handIndex + 1);
@@ -2015,6 +2428,21 @@ function playerSplit() {
   window.setTimeout(() => beginDealerPhase(), 250);
 }
 
+function playerSurrender() {
+  if (!canSurrender()) {
+    setStatus("Surrender is only available on a fresh two-card hand.", true);
+    return;
+  }
+
+  const handIndex = state.activePlayerHand;
+  recordPlayerAction(handIndex, "Surrender", state.playerHands[handIndex]);
+  state.playerSurrendered[handIndex] = true;
+  state.playerStood[handIndex] = true;
+  advanceAfterPlayerAction(
+    `Hand ${handIndex + 1} surrenders. Dealer blackjack would still take full bet.`,
+  );
+}
+
 function advanceAfterPlayerAction(message) {
   if (message) setStatus(message);
   const next = findNextOpenPlayerHand(state.activePlayerHand);
@@ -2032,6 +2460,14 @@ function checkDealerBlackjack() {
 
   const results = [];
   for (let index = 0; index < state.playerHands.length; index += 1) {
+    if (state.playerSurrendered[index]) {
+      const bet = state.playerHandBets[index];
+      state.bankrolls.dealer += bet * 2;
+      results.push(
+        `H${index + 1}: Surrender void vs dealer blackjack (full bet lost)`,
+      );
+      continue;
+    }
     const hand = state.playerHands[index];
     const score = handValue(hand);
     const bet = state.playerHandBets[index];
@@ -2091,6 +2527,10 @@ function settleAllPlayerBusts() {
   if (state.phase !== "dealer") return;
   const results = [];
   for (let index = 0; index < state.playerHands.length; index += 1) {
+    if (state.playerSurrendered[index]) {
+      results.push(`H${index + 1}: Surrendered`);
+      continue;
+    }
     const bet = state.playerHandBets[index];
     const score = handValue(state.playerHands[index]);
     state.bankrolls.dealer += bet * 2;
@@ -2110,6 +2550,14 @@ function settleStandardRound() {
   const dealerBlackjack = isBlackjack(state.dealerHand);
   const results = [];
   for (let index = 0; index < state.playerHands.length; index += 1) {
+    if (state.playerSurrendered[index]) {
+      const bet = state.playerHandBets[index];
+      const refund = bet / 2;
+      state.bankrolls.player += refund;
+      state.bankrolls.dealer += bet + refund;
+      results.push(`H${index + 1}: Surrendered (lost ${formatMoney(refund)})`);
+      continue;
+    }
     const hand = state.playerHands[index];
     const playerScore = handValue(hand);
     const playerValid = playerScore <= 21;
@@ -2126,12 +2574,17 @@ function settleStandardRound() {
     } else if (dealerBlackjack && playerScore === 21 && !playerBlackjack) {
       state.bankrolls.dealer += bet * 2;
       results.push(`H${index + 1}: Dealer blackjack beats ${playerScore}`);
+    } else if (!playerValid) {
+      state.bankrolls.dealer += bet * 2;
+      results.push(
+        `H${index + 1}: Dealer wins on player bust (${playerScore})`,
+      );
     } else if (playerValid && (!dealerValid || playerScore > dealerScore)) {
       state.bankrolls.player += bet * 2;
       results.push(
         `H${index + 1}: Player wins (${playerScore} vs ${dealerScore})`,
       );
-    } else if (dealerValid && (!playerValid || dealerScore > playerScore)) {
+    } else if (dealerValid && dealerScore > playerScore) {
       state.bankrolls.dealer += bet * 2;
       results.push(
         `H${index + 1}: Dealer wins (${dealerScore} vs ${playerScore})`,
@@ -2160,6 +2613,12 @@ function settleStandardRound() {
 }
 
 function concludeRound(type, title, subtitle, payText) {
+  const playerDelta = state.bankrolls.player - state.roundStartBankrolls.player;
+  if (state.currentHandEntry) {
+    state.currentHandEntry.result = type;
+    state.currentHandEntry.playerDelta = playerDelta;
+    finalizeHandEntry();
+  }
   state.handsPlayed += 1;
   state.phase = "done";
   state.dealerHidden = false;
@@ -2214,6 +2673,10 @@ function triggerActionFromHotkey(action) {
     playerSplit();
     return true;
   }
+  if (action === "surrender" && state.phase === "player") {
+    playerSurrender();
+    return true;
+  }
   return false;
 }
 
@@ -2259,6 +2722,7 @@ function onActionClick(event) {
   else if (button.id === "standBtn") playerStand();
   else if (button.id === "dblBtn") playerDouble();
   else if (button.id === "splitBtn") playerSplit();
+  else if (button.id === "surrenderBtn") playerSurrender();
   else if (button.id === "newBtn") startNewHand();
 }
 
@@ -2321,6 +2785,7 @@ function renderButtons() {
       <button class="btn btn-stand" id="standBtn">Stand</button>
       ${canDouble() ? '<button class="btn btn-double" id="dblBtn">Double</button>' : ""}
       ${canSplit() ? '<button class="btn btn-double" id="splitBtn">Split</button>' : ""}
+      ${canSurrender() ? '<button class="btn btn-surrender" id="surrenderBtn">Surrender</button>' : ""}
     `;
   } else if (state.phase === "dealer") {
     html =
