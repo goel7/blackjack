@@ -507,6 +507,16 @@ function renderHandLog() {
     ? log.filter((hand) => hand.actions.some((action) => !action.isOptimal))
     : log;
 
+  // Always calculate overall optimal percentage from entire log
+  const allActions = log.flatMap((hand) => hand.actions);
+  const allOptimalCount = allActions.filter(
+    (action) => action.isOptimal,
+  ).length;
+  const overallOptimalPercent =
+    allActions.length > 0
+      ? Math.round((allOptimalCount / allActions.length) * 100)
+      : 0;
+
   if (!log.length) {
     ui.logContent.innerHTML =
       '<div style="padding: 20px; text-align: center; color: rgba(245, 234, 216, 0.5);">No hands recorded yet.</div>';
@@ -520,11 +530,7 @@ function renderHandLog() {
     ui.logContent.innerHTML =
       '<div style="padding: 20px; text-align: center; color: rgba(245, 234, 216, 0.6);">No suboptimal hands found 🎉</div>';
     ui.logHandCount.textContent = String(log.length);
-    const totals = log.flatMap((hand) => hand.actions);
-    const optimalCount = totals.filter((action) => action.isOptimal).length;
-    const optimalPercent =
-      totals.length > 0 ? Math.round((optimalCount / totals.length) * 100) : 0;
-    ui.logOptimalCount.textContent = `${optimalPercent}%`;
+    ui.logOptimalCount.textContent = `${overallOptimalPercent}%`;
     renderLogFilterButton();
     return;
   }
@@ -540,6 +546,8 @@ function renderHandLog() {
   };
 
   const entries = visibleLog.map((hand) => {
+    const entryId = `log-entry-${hand.roundNumber}`;
+    const detailsId = `log-details-${hand.roundNumber}`;
     const actionsHtml = hand.actions
       .map((action) => {
         totalActions += 1;
@@ -571,24 +579,47 @@ function renderHandLog() {
           : `-${formatMoney(Math.abs(hand.playerDelta))}`
         : "—";
 
+    const finalHandsHtml =
+      hand.finalPlayerHands && hand.finalDealerHand
+        ? `
+        <div class="log-entry-details" id="${detailsId}" hidden>
+          <div class="log-final-hands">
+            <div class="log-final-section">
+              <div class="log-final-label">Final Player Hands</div>
+              ${hand.finalPlayerHands
+                .map(
+                  (cards, i) =>
+                    `<div class="log-final-hand">H${i + 1}: <strong>${cards}</strong> (${hand.finalPlayerTotals[i]})</div>`,
+                )
+                .join("")}
+            </div>
+            <div class="log-final-section">
+              <div class="log-final-label">Final Dealer Hand</div>
+              <div class="log-final-hand">D: <strong>${hand.finalDealerHand}</strong> (${hand.finalDealerTotal})</div>
+            </div>
+          </div>
+        </div>
+        `
+        : "";
+
     return `
-      <div class="log-entry">
+      <div class="log-entry" id="${entryId}">
         <div class="log-entry-header">
           <span class="log-entry-round">Hand #${hand.roundNumber}</span>
           <span class="log-entry-result ${resultClass}">${resultText}</span>
+          ${hand.finalPlayerHands ? `<button class="log-show-more-btn" onclick="toggleLogDetails('${detailsId}')">Show more</button>` : ""}
           <span style="margin-left: auto; color: var(--gold-light);">${deltaText}</span>
         </div>
         <div class="log-entry-context">Dealer upcard: <strong>${dealerUpcardText}</strong></div>
         <div class="log-entry-actions">${actionsHtml}</div>
+        ${finalHandsHtml}
       </div>
     `;
   });
 
   ui.logContent.innerHTML = entries.join("");
   ui.logHandCount.textContent = String(log.length);
-  const optimalPercent =
-    totalActions > 0 ? Math.round((optimalActions / totalActions) * 100) : 0;
-  ui.logOptimalCount.textContent = `${optimalPercent}%`;
+  ui.logOptimalCount.textContent = `${overallOptimalPercent}%`;
   renderLogFilterButton();
 }
 
@@ -1160,16 +1191,25 @@ function initializeHandEntry() {
 function recordPlayerAction(handIndex, action, playerHand) {
   if (!state.currentHandEntry) return;
 
-  const canDouble = canDoubleForLogging(handIndex);
-  const canSplit = canSplitForLogging(handIndex);
-  const canSurrender = canSurrenderForLogging(handIndex);
+  const doubleAllowed =
+    state.activePlayerHand === handIndex
+      ? canDouble()
+      : canDoubleForLogging(handIndex);
+  const splitAllowed =
+    state.activePlayerHand === handIndex
+      ? canSplit()
+      : canSplitForLogging(handIndex);
+  const surrenderAllowed =
+    state.activePlayerHand === handIndex
+      ? canSurrender()
+      : canSurrenderForLogging(handIndex);
   const dealerUpcard = state.currentHandEntry.dealerUpcard;
   const optimalAction = getOptimalAction(
     playerHand,
     dealerUpcard,
-    canDouble,
-    canSplit,
-    canSurrender,
+    doubleAllowed,
+    splitAllowed,
+    surrenderAllowed,
   );
   const isOptimal = action === optimalAction;
 
@@ -1186,7 +1226,9 @@ function recordPlayerAction(handIndex, action, playerHand) {
 function canDoubleForLogging(handIndex) {
   const hand = state.playerHands[handIndex];
   if (!hand || hand.length !== 2) return false;
-  if (!state.playerHandNaturalEligible[handIndex]) return false;
+  if (state.playerStood[handIndex]) return false;
+  if (state.playerBusted[handIndex]) return false;
+  if (state.playerSurrendered[handIndex]) return false;
   const requiredBet = state.playerHandBets[handIndex];
   return (
     state.bankrolls.player >= requiredBet &&
@@ -2617,6 +2659,16 @@ function concludeRound(type, title, subtitle, payText) {
   if (state.currentHandEntry) {
     state.currentHandEntry.result = type;
     state.currentHandEntry.playerDelta = playerDelta;
+    state.currentHandEntry.finalPlayerHands = state.playerHands.map((hand) =>
+      hand.map((card) => `${card.val}${card.suit}`).join(" "),
+    );
+    state.currentHandEntry.finalDealerHand = state.dealerHand
+      .map((card) => `${card.val}${card.suit}`)
+      .join(" ");
+    state.currentHandEntry.finalPlayerTotals = state.playerHands.map((hand) =>
+      handValue(hand),
+    );
+    state.currentHandEntry.finalDealerTotal = handValue(state.dealerHand);
     finalizeHandEntry();
   }
   state.handsPlayed += 1;
@@ -2843,6 +2895,18 @@ function showResult(type, title, subtitle, payText) {
 function hideResult() {
   ui.resultBanner.style.display = "none";
   ui.table.classList.remove("result-open");
+}
+
+function toggleLogDetails(detailsId) {
+  const details = document.getElementById(detailsId);
+  if (!details) return;
+  const isHidden = details.hidden;
+  details.hidden = !isHidden;
+  const logEntry = details.closest(".log-entry");
+  const btn = logEntry ? logEntry.querySelector(".log-show-more-btn") : null;
+  if (btn) {
+    btn.textContent = isHidden ? "Show less" : "Show more";
+  }
 }
 
 function setStatus(message, alert = false) {

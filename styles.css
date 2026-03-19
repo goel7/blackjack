@@ -437,6 +437,76 @@ h1 {
   color: #ffa500;
 }
 
+.log-show-more-btn {
+  padding: 2px 8px;
+  background: rgba(201, 168, 76, 0.15);
+  color: var(--gold-light);
+  border: 1px solid rgba(201, 168, 76, 0.3);
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: fit-content;
+  height: fit-content;
+}
+
+.log-show-more-btn:hover {
+  background: rgba(201, 168, 76, 0.25);
+  border-color: rgba(201, 168, 76, 0.5);
+}
+
+.log-entry-details {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(201, 168, 76, 0.08);
+  border-left: 2px solid rgba(201, 168, 76, 0.2);
+  border-radius: 3px;
+  animation: slideDown 0.2s ease;
+}
+
+.log-entry-details[hidden] {
+  display: none;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+.log-final-hands {
+  display: grid;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.log-final-section {
+  display: grid;
+  gap: 4px;
+}
+
+.log-final-label {
+  color: var(--gold-light);
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.log-final-hand {
+  color: rgba(245, 234, 216, 0.8);
+  padding-left: 4px;
+}
+
+.log-final-hand strong {
+  color: rgba(245, 234, 216, 0.95);
+}
+
 .keybind-grid {
   display: grid;
   gap: 10px;
