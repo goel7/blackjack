@@ -1400,3 +1400,114 @@ h1 {
     padding-inline: 14px;
   }
 }
+
+.shuffle-overlay {
+  position: absolute;
+  inset: 12px;
+  border-radius: 84px;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  z-index: 10;
+  animation: shuffleFade 0.18s ease-out;
+}
+
+@keyframes shuffleFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.shuffle-stack {
+  position: relative;
+  width: 80px;
+  height: 110px;
+}
+
+.shuffle-card {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 70px;
+  height: 100px;
+  margin-left: -35px;
+  border-radius: 8px;
+  background: repeating-linear-gradient(
+    45deg,
+    #1a3a6e,
+    #1a3a6e 4px,
+    #1e4480 4px,
+    #1e4480 8px
+  );
+  border: 1px solid #0d2552;
+  box-shadow:
+    0 6px 14px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+
+.shuffle-card-a {
+  animation: shuffleCardA 0.6s ease-in-out infinite;
+}
+.shuffle-card-b {
+  animation: shuffleCardB 0.6s ease-in-out infinite;
+}
+.shuffle-card-c {
+  animation: shuffleCardC 0.6s ease-in-out infinite;
+  animation-delay: 0.15s;
+}
+.shuffle-card-d {
+  animation: shuffleCardD 0.6s ease-in-out infinite;
+  animation-delay: 0.15s;
+}
+
+@keyframes shuffleCardA {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  50% {
+    transform: translateX(-46px) rotate(-12deg);
+  }
+}
+
+@keyframes shuffleCardB {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  50% {
+    transform: translateX(46px) rotate(12deg);
+  }
+}
+
+@keyframes shuffleCardC {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: translateX(-30px) rotate(-8deg) translateY(-6px);
+  }
+}
+
+@keyframes shuffleCardD {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: translateX(30px) rotate(8deg) translateY(-6px);
+  }
+}
+
+.shuffle-text {
+  font-family: "Playfair Display", serif;
+  font-size: 1.05rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}

@@ -24,6 +24,9 @@ const BLACKJACK_PAYOUTS = {
 };
 
 const DEFAULT_BLACKJACK_PAYOUT = "5:4";
+const CUT_CARD_MIN_REMAINING = 10;
+const CUT_CARD_MAX_REMAINING = 13;
+const SHUFFLE_ANIMATION_MS = 1400;
 const SETTINGS_STORAGE_KEY = "blackjack_settings_v1";
 const DEFAULT_KEYBINDS = {
   deal: "d",
@@ -36,6 +39,9 @@ const DEFAULT_KEYBINDS = {
 
 const state = {
   deck: [],
+  cutCardPosition: 0,
+  reshuffleEveryHand: true,
+  shuffleAnimating: false,
   dealerHand: [],
   playerHands: [[]],
   playerHandBets: [0],
@@ -104,6 +110,7 @@ function savePersistentSettings() {
     autoBetAmount: state.autoBetAmount,
     blackjackPayout: state.blackjackPayout,
     dealerRule: state.dealerRule,
+    reshuffleEveryHand: state.reshuffleEveryHand,
     hotkeysEnabled: state.hotkeysEnabled,
     keybinds: state.keybinds,
     simulateRunCountInput: ui.simulateRunCountInput?.value ?? "100",
@@ -135,6 +142,10 @@ function loadPersistentSettings() {
       ? parsed.blackjackPayout
       : DEFAULT_BLACKJACK_PAYOUT;
     state.dealerRule = parsed.dealerRule === "S17" ? "S17" : "H17";
+    state.reshuffleEveryHand =
+      parsed.reshuffleEveryHand === undefined
+        ? true
+        : Boolean(parsed.reshuffleEveryHand);
     state.hotkeysEnabled = Boolean(parsed.hotkeysEnabled);
     state.keybinds = sanitizeKeybinds(parsed.keybinds);
   } catch {
@@ -150,6 +161,7 @@ function init() {
     settingsBtn: $("settingsBtn"),
     settingsMenu: $("settingsMenu"),
     assistedToggle: $("assistedToggle"),
+    reshuffleToggle: $("reshuffleToggle"),
     hotkeysToggle: $("hotkeysToggle"),
     autoBetInput: $("autoBetInput"),
     blackjackPayoutSelect: $("blackjackPayoutSelect"),
@@ -219,6 +231,7 @@ function init() {
 
   ui.settingsBtn.addEventListener("click", toggleSettingsMenu);
   ui.assistedToggle.addEventListener("change", onAssistedToggleChange);
+  ui.reshuffleToggle.addEventListener("change", onReshuffleToggleChange);
   ui.hotkeysToggle.addEventListener("change", onHotkeysToggleChange);
   ui.autoBetInput.addEventListener("change", onAutoBetInputChange);
   ui.blackjackPayoutSelect.addEventListener("change", onBlackjackPayoutChange);
@@ -293,6 +306,7 @@ function init() {
 
   syncBankrollInputs();
   ui.assistedToggle.checked = state.assistedGameplay;
+  ui.reshuffleToggle.checked = state.reshuffleEveryHand;
   ui.hotkeysToggle.checked = state.hotkeysEnabled;
   ui.autoBetInput.value = String(state.autoBetAmount);
   ui.blackjackPayoutSelect.value = state.blackjackPayout;
@@ -324,6 +338,22 @@ function onAssistedToggleChange() {
   savePersistentSettings();
   if (state.assistedGameplay && state.phase === "player") {
     showAssistRecommendation();
+  }
+}
+
+function onReshuffleToggleChange() {
+  state.reshuffleEveryHand = ui.reshuffleToggle.checked;
+  savePersistentSettings();
+  if (state.reshuffleEveryHand) {
+    state.deck = [];
+    state.cutCardPosition = 0;
+    setStatus("Reshuffle every hand: on. The deck is shuffled before each deal.");
+  } else {
+    state.deck = [];
+    state.cutCardPosition = 0;
+    setStatus(
+      "Reshuffle every hand: off. The deck reshuffles when ~75–80% of cards are used.",
+    );
   }
 }
 
@@ -416,7 +446,14 @@ function renderRules() {
   const rules = [];
 
   rules.push(`<div class="rule-item">
-    <strong>Decks:</strong> 1 deck, shuffled every hand
+    <strong>Style:</strong> American — dealer peeks for blackjack when showing Ace or 10-value
+  </div>`);
+
+  const shuffleText = state.reshuffleEveryHand
+    ? "shuffled every hand"
+    : `shuffled at ~75–80% penetration (cut card)`;
+  rules.push(`<div class="rule-item">
+    <strong>Decks:</strong> 1 deck, ${shuffleText}
   </div>`);
 
   rules.push(`<div class="rule-item">
@@ -1497,6 +1534,25 @@ function simulateSingleHand({
     };
   }
 
+  // American peek: dealer shows Ace or 10-value and has blackjack — end before player acts
+  const dealerUpcardVal = dealerHand[0].val;
+  const simDealerPeeks =
+    dealerUpcardVal === "A" || isTenValueCard(dealerHand[0]);
+  if (simDealerPeeks && dealerNatural) {
+    simulatedDealerBankroll += baseBet * 2;
+    dealerHandWins += 1;
+    return {
+      playerDelta: simulatedPlayerBankroll - playerBankroll,
+      dealerDelta: simulatedDealerBankroll - dealerBankroll,
+      totalWagered,
+      doubles,
+      splits,
+      playerHandWins,
+      dealerHandWins,
+      handPushes,
+    };
+  }
+
   let handIndex = 0;
   while (handIndex < hands.length) {
     let hand = hands[handIndex];
@@ -1847,6 +1903,8 @@ function applyBankrollSetup() {
   state.bankrolls.player = Math.floor(playerBankroll);
   state.bankrolls.dealer = Math.floor(dealerBankroll);
   refreshChipDenominations(state.bankrolls.player);
+  state.deck = [];
+  state.cutCardPosition = 0;
   resetHandStateForBetting();
   applyAutomaticBetIfConfigured();
   closeBankrollModal();
@@ -1863,7 +1921,10 @@ function applyBankrollSetup() {
 }
 
 function resetHandStateForBetting() {
-  state.deck = [];
+  if (state.reshuffleEveryHand) {
+    state.deck = [];
+    state.cutCardPosition = 0;
+  }
   state.dealerHand = [];
   state.playerHands = [[]];
   state.playerHandBets = [0];
@@ -1894,6 +1955,39 @@ function buildDeck() {
       state.deck[index],
     ];
   }
+  const range = CUT_CARD_MAX_REMAINING - CUT_CARD_MIN_REMAINING + 1;
+  state.cutCardPosition =
+    CUT_CARD_MIN_REMAINING + Math.floor(Math.random() * range);
+}
+
+function isCutCardReached() {
+  return state.deck.length <= state.cutCardPosition;
+}
+
+function runShuffleAnimation(onComplete) {
+  if (!ui.table) {
+    if (typeof onComplete === "function") onComplete();
+    return;
+  }
+  state.shuffleAnimating = true;
+  const overlay = document.createElement("div");
+  overlay.className = "shuffle-overlay";
+  overlay.innerHTML = `
+    <div class="shuffle-stack">
+      <div class="shuffle-card shuffle-card-a"></div>
+      <div class="shuffle-card shuffle-card-b"></div>
+      <div class="shuffle-card shuffle-card-c"></div>
+      <div class="shuffle-card shuffle-card-d"></div>
+    </div>
+    <div class="shuffle-text">Shuffling deck…</div>
+  `;
+  ui.table.appendChild(overlay);
+  setStatus("Shuffling the deck…");
+  setTimeout(() => {
+    overlay.remove();
+    state.shuffleAnimating = false;
+    if (typeof onComplete === "function") onComplete();
+  }, SHUFFLE_ANIMATION_MS);
 }
 
 function drawCard(target, handIndex = 0) {
@@ -2251,6 +2345,7 @@ function deductStakeFromBoth(amount) {
 
 function deal() {
   if (state.phase !== "betting") return;
+  if (state.shuffleAnimating) return;
   if (state.currentBet <= 0) {
     setStatus("Place a bet first!", true);
     return;
@@ -2267,7 +2362,23 @@ function deal() {
   const baseBet = state.currentBet;
   if (!deductStakeFromBoth(baseBet)) return;
 
-  buildDeck();
+  const needsShuffle =
+    state.reshuffleEveryHand || state.deck.length === 0 || isCutCardReached();
+  const shouldAnimate = needsShuffle && !state.reshuffleEveryHand;
+
+  if (shouldAnimate) {
+    runShuffleAnimation(() => {
+      buildDeck();
+      finishDeal(baseBet);
+    });
+    return;
+  }
+
+  if (needsShuffle) buildDeck();
+  finishDeal(baseBet);
+}
+
+function finishDeal(baseBet) {
   state.dealerHand = [];
   state.playerHands = [[]];
   state.playerHandBets = [baseBet];
@@ -2288,31 +2399,57 @@ function deal() {
   initializeHandEntry();
 
   hideResult();
-  setStatus("Player turn. Choose Hit, Stand, Double, Split, or Surrender.");
   render();
-  if (handleInitialNaturals()) render();
+  if (handleInitialNaturals()) {
+    render();
+  } else {
+    const peekMsg = dealerUpcardPeeks()
+      ? "Dealer peeks — no blackjack. "
+      : "";
+    setStatus(
+      `${peekMsg}Player turn. Choose Hit, Stand, Double, Split, or Surrender.`,
+    );
+  }
+}
+
+function dealerUpcardPeeks() {
+  const upcard = state.dealerHand[0];
+  return upcard && (upcard.val === "A" || isTenValueCard(upcard));
 }
 
 function handleInitialNaturals() {
   const playerNatural = isPlayerHandNaturalBlackjack(0);
-  if (!playerNatural) return false;
-
-  const bet = state.playerHandBets[0];
   const dealerNatural = isBlackjack(state.dealerHand);
-  state.dealerHidden = false;
+  const bet = state.playerHandBets[0];
 
-  if (dealerNatural) {
-    state.bankrolls.player += bet;
-    state.bankrolls.dealer += bet;
-    concludeRound(
-      "push",
-      "Push!",
-      "Both Blackjack — it's a tie.",
-      `Bet of ${formatMoney(bet)} returned to both sides.`,
-    );
+  // American peek: dealer checks hole card when showing Ace or 10-value
+  if (dealerUpcardPeeks() && dealerNatural) {
+    state.dealerHidden = false;
+    if (playerNatural) {
+      state.bankrolls.player += bet;
+      state.bankrolls.dealer += bet;
+      concludeRound(
+        "push",
+        "Push!",
+        "Both Blackjack — it's a tie.",
+        `Bet of ${formatMoney(bet)} returned to both sides.`,
+      );
+    } else {
+      state.bankrolls.dealer += bet * 2;
+      concludeRound(
+        "lose",
+        "Dealer Blackjack",
+        "Dealer peeks and reveals blackjack.",
+        `Player loses ${formatMoney(bet)}.`,
+      );
+    }
     return true;
   }
 
+  if (!playerNatural) return false;
+
+  // Player has blackjack, dealer confirmed no blackjack
+  state.dealerHidden = false;
   const profit = getBlackjackProfit(bet);
   const extraDealerCharge = Math.max(0, profit - bet);
   state.bankrolls.player += bet + profit;
